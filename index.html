@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bani Ali Murtolo - Colorful Tree</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        /* --- Login Screen Styles --- */
+        #login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .login-box {
+            background-color: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        .login-box h2 {
+            color: #2c3e50;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .login-box p {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        .login-box button {
+            width: 100%;
+            padding: 12px;
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .login-box button:hover {
+            background-color: #2563eb;
+        }
+        #login-error {
+            color: #ef4444;
+            font-size: 14px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        /* --- Main Content Styles (Hidden by default) --- */
+        #main-content {
+            display: none;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        #tree-container {
+            width: 100%;
+            max-width: 1300px;
+            height: 850px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+        .node { cursor: pointer; }
+        .node rect { rx: 6px; ry: 6px; }
+        .node text {
+            font: 13px sans-serif;
+            font-weight: 500;
+            fill: #334155;
+            pointer-events: none;
+        }
+        .node circle {
+            stroke: #3b82f6;
+            stroke-width: 2px;
+        }
+        .link {
+            fill: none;
+            stroke: #cbd5e1;
+            stroke-width: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>Bani Ali Murtolo</h2>
+            <p>Please enter the password to view the family tree.</p>
+            <input type="password" id="password-input" placeholder="Enter Password" />
+            <button onclick="checkPassword()">View Family Tree</button>
+            <div id="login-error">Incorrect password. Please try again.</div>
+        </div>
+    </div>
+
+    <div id="main-content" style="display: none;">
+        <h1>Bani Ali Murtolo</h1>
+        <p class="subtitle">Pastel Generation Tree<br>
+        <small>Click any box (or the circle on the right) to expand/collapse. Scroll to zoom, drag to pan.</small></p>
+        <div id="tree-container"></div>
+    </div>
+
+    <script>
+        // --- Authentication Logic ---
+        const CORRECT_PASSWORD = "keluarga123"; // CHANGE YOUR PASSWORD HERE
+        const SESSION_DURATION_HOURS = 24;
+        const SESSION_KEY = "baniMurtoloAuthTimestamp";
+
+        // Check if user is already authenticated when page loads
+        window.onload = function() {
+            const authTimestamp = localStorage.getItem(SESSION_KEY);
+            
+            if (authTimestamp) {
+                const now = new Date().getTime();
+                const timeDiff = now - parseInt(authTimestamp);
+                const hoursDiff = timeDiff / (1000 * 60 * 60);
+
+                if (hoursDiff < SESSION_DURATION_HOURS) {
+                    // Session is valid, show tree
+                    showTree();
+                    return;
+                } else {
+                    // Session expired, clear it
+                    localStorage.removeItem(SESSION_KEY);
+                }
+            }
+        };
+
+        // Allow pressing 'Enter' to submit password
+        document.getElementById("password-input").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                checkPassword();
+            }
+        });
+
+        function checkPassword() {
+            const input = document.getElementById("password-input").value;
+            const errorMsg = document.getElementById("login-error");
+
+            if (input === CORRECT_PASSWORD) {
+                // Save current timestamp to localStorage
+                localStorage.setItem(SESSION_KEY, new Date().getTime().toString());
+                errorMsg.style.display = "none";
+                showTree();
+            } else {
+                errorMsg.style.display = "block";
+            }
+        }
+
+        function showTree() {
+            document.getElementById("login-overlay").style.display = "none";
+            document.getElementById("main-content").style.display = "flex";
+            
+            // Only initialize the D3 tree after successful login
+            initD3Tree();
+        }
+
+        // --- D3 Family Tree Logic ---
+        function initD3Tree() {
+            // Parsed family data
+            const treeData = {
+                "name": "Mbah H ALI MURTOLO",
+                "children": [
+                    {
+                        "name": "H SAYUTI",
+                        "children": [
+                            {
+                                "name": "Muslikhah",
+                                "children": [
+                                    { "name": "Munjayanah", "children": [ {"name": "Siti Munawaroh"}, {"name": "Nindiarso"}, {"name": "Triyono"}, {"name": "Eny Susanti"}, {"name": "Edy Hardjanto (Kenthut)"}, {"name": "Budi Jayanto (Kenthit)"}, {"name": "Endang Trimurdiningsih"} ] },
+                                    { "name": "E. Sadjadi", "children": [ {"name": "Bambang Urip Sadardi"}, {"name": "Endang Tri Sadarsih"}, {"name": "Eni Catur Sadartinah"}, {"name": "Endah Sri Sudjatminingsih"}, {"name": "Emy Sadaryanti"}, {"name": "Esti Budi Hari Kartini"}, {"name": "Ernawati Sadarmi"}, {"name": "Bambang Budi Setyono (Kupit)"}, {"name": "Erlina Setyani (Kunil)"}, {"name": "Bambang Budi Setyarso (Kelik)"}, {"name": "Bambang Suprihadi N"} ] },
+                                    { "name": "St Mubarokah", "children": [ {"name": "Darmastuti Iwan S"}, {"name": "Masrudi"}, {"name": "Masyhuri"}, {"name": "Masruniati"}, {"name": "Henisari Manfa’ati"} ] },
+                                    { "name": "Sri Warsiki", "children": [ {"name": "Agus Wibowo"}, {"name": "Teguh Prakosa"}, {"name": "Akhmad Jamal Yuliarto"}, {"name": "Nur’aini"} ] },
+                                    { "name": "Subagyo Joko Warsito", "children": [ {"name": "Yanuar Rahmansyah"}, {"name": "Rahmat Misbah"}, {"name": "Tri Astati Dyah"}, {"name": "Rony Satriya"}, {"name": "Anna Rahmawati"}, {"name": "Endah Wahyu Nugrahani"}, {"name": "Suryo Agung Nugroho"} ] },
+                                    { "name": "Sri Rahayu Sukoyo", "children": [ {"name": "Jarot Eko Wiwoho"}, {"name": "Endang Sulistyaningsih"}, {"name": "Yunianto Joko Nugroho"}, {"name": "Sri Mastini"}, {"name": "Kusno Wibowo"} ] },
+                                    { "name": "Murtiningsih", "children": [ {"name": "Bintang Urip Hidayatullah"}, {"name": "Maharani P Hidayatullah"} ] },
+                                    { "name": "Moeljadi", "children": [ {"name": "Nurliana"}, {"name": "Ifan Mauladi"} ] }
+                                ]
+                            },
+                            {
+                                "name": "M. Sareh Hamid",
+                                "children": [
+                                    { "name": "M. Mahfud", "children": [ {"name": "Indriyani Ekawati"}, {"name": "Webby Dwinanto"}, {"name": "Shinta Triyadma"} ] },
+                                    { "name": "Achmad Syarief", "children": [ {"name": "Arif Pangestu"}, {"name": "Utami Pangestu"} ] },
+                                    { "name": "Umi Salamah", "children": [ {"name": "Dyah Fitriyanti"}, {"name": "Tania Megasari"}, {"name": "Sandi Yugo Santoso"} ] },
+                                    { "name": "Shofiyah Sumarji", "children": [ {"name": "Basic Sutresno & Geza"}, {"name": "Dwi Putri Setyoningrum"} ] }
+                                ]
+                            },
+                            {
+                                "name": "Sya’diyah Amatwitoyo",
+                                "children": [
+                                    { "name": "Soejanto", "children": [ {"name": "Darmawan Joko Nugroho"}, {"name": "Wasisto Joko Nugroho"}, {"name": "Budiono Joko Nugroho & Tiwik"} ] },
+                                    { "name": "Suyanti", "children": [ {"name": "Siti Sulaemah"}, {"name": "Moh Anwar"}, {"name": "Moh Arifin"}, {"name": "Ali Yaeni"}, {"name": "Siti Fatimah"} ] }
+                                ]
+                            },
+                            {
+                                "name": "Kunthiyah Salamun",
+                                "children": [
+                                    { "name": "Muh Irsam" }, { "name": "Marjuni Amat Bolang" }, { "name": "Asmudi" }, { "name": "Hari" },
+                                    { "name": "Mardjuki", "children": [ {"name": "Dwi Setyo Indrayani"}, {"name": "Eko Setyo Indrati"}, {"name": "Tri Setyo Indriyatno"}, {"name": "Dian Setyaningrum"} ] },
+                                    { "name": "Muh Ma’ruf" }, { "name": "Marfu’ah" }, { "name": "Sya’dun" }
+                                ]
+                            },
+                            {
+                                "name": "M. Thoha"
+                            },
+                            {
+                                "name": "Siti Marijatul Kibtijah",
+                                "children": [
+                                    { "name": "Prasetyo Joko Yuwono", "children": [ {"name": "Arum Novitasari"}, {"name": "Apriliani Putri Prasetyo"}, {"name": "Sonya Cantika L L N"} ] },
+                                    { "name": "Nuryani Pujiastuti JB", "children": [ {"name": "Cosmas pulung Pribadi Renta"}, {"name": "Mikha Apriyanto Renta"} ] },
+                                    { "name": "Kusrini Retnaningsih", "children": [ {"name": "Nina Retna Utami"} ] },
+                                    { "name": "Titik Wahyu Widayati", "children": [ {"name": "Adnan Wahyu Anggoro"}, {"name": "Ganny Analis Rahman"} ] },
+                                    { "name": "Anny Listyowati", "children": [ {"name": "Santy Diliana"}, {"name": "Alif Ardian Rifky"}, {"name": "Singgih Tri Hatmojo"} ] },
+                                    { "name": "Sayekti Wuryaningrum", "children": [ {"name": "Nurul Lita Esthy"}, {"name": "Puguh Prasojo"} ] },
+                                    { "name": "Sigit Yudo Nugroho", "children": [ {"name": "Sungging Adhi Prakoso"}, {"name": "Auliya Ayu Farah Dilla"}, {"name": "Haryo Seto Bimantoro"} ] },
+                                    { "name": "Enggar Bawono", "children": [ {"name": "Sofiyatun Kanila"} ] }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "IMAM BAKRI",
+                        "children": [
+                            { "name": "Harun Syamsuri", "children": [ {"name": "Fadhiyah Hadiprayitno"}, {"name": "Mauludah Suyoto"}, {"name": "Istichomah Shodiq"}, {"name": "Ma’ruf"} ] },
+                            { "name": "Siti Khatijah Sudarmo" },
+                            { "name": "M.Y. Tasrip Martowiyono", "children": [ {"name": "M Th Sri Mur Erni"} ] },
+                            { "name": "Sarwi Darmosuwito", "children": [ {"name": "Suharti"} ] },
+                            { "name": "Rodhiyah" }
+                        ]
+                    },
+                    {
+                        "name": "AMAT NGALI",
+                        "children": [
+                            { "name": "Soeyahman" },
+                            { "name": "Soebari" },
+                            { "name": "Romlah", "children": [ {"name": "Suyadi Yasudah"}, {"name": "Chotidjah"}, {"name": "Suyatno"}, {"name": "Supiyatni"}, {"name": "Surodjo"}, {"name": "Sudarto"} ] }
+                        ]
+                    },
+                    {
+                        "name": "ALI SOEWARNO",
+                        "children": [
+                            { "name": "Toati", "children": [ {"name": "Edy Mulyo Sujono"}, {"name": "Didik Adi Nugroho"}, {"name": "Erwanto Puji Raharjo"}, {"name": "Yuli Andi Setiawan"}, {"name": "Yudi Kristanto"} ] },
+                            { "name": "Bambang H." },
+                            { "name": "Siswoyo" },
+                            { "name": "Qoriah" }
+                        ]
+                    }
+                ]
+            };
+
+            const pastelColors = ['#FDE2E4', '#FFF1E6', '#E2ECE9', '#DFE7FD', '#F0E6EF', '#EAE4E9'];
+            
+            // Re-select container dimensions inside the function so it measures properly after un-hiding
+            const container = document.getElementById('tree-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            const svg = d3.select("#tree-container").append("svg")
+                .attr("width", "100%")
+                .attr("height", "100%");
+
+            const svgGroup = svg.append("g");
+
+            const zoom = d3.zoom()
+                .scaleExtent([0.2, 3])
+                .on("zoom", (event) => { svgGroup.attr("transform", event.transform); });
+            svg.call(zoom);
+
+            const linkGroup = svgGroup.append("g").attr("class", "links-layer");
+            const nodeGroup = svgGroup.append("g").attr("class", "nodes-layer");
+
+            let i = 0, duration = 750, root;
+
+            const treemap = d3.tree().nodeSize([45, 300]);
+
+            root = d3.hierarchy(treeData, function(d) { return d.children; });
+            root.x0 = 0;
+            root.y0 = 0;
+
+            root.children.forEach(collapse);
+
+            // Center initial view
+            const initialTransform = d3.zoomIdentity.translate(80, height / 2).scale(0.85);
+            svg.call(zoom.transform, initialTransform);
+
+            update(root);
+
+            function collapse(d) {
+                if(d.children) {
+                    d._children = d.children;
+                    d._children.forEach(collapse);
+                    d.children = null;
+                }
+            }
+
+            function update(source) {
+                const treeData = treemap(root);
+                const nodes = treeData.descendants(), links = treeData.descendants().slice(1);
+
+                const node = nodeGroup.selectAll('g.node')
+                    .data(nodes, function(d) { return d.id || (d.id = ++i); });
+
+                const nodeEnter = node.enter().append('g')
+                    .attr('class', 'node')
+                    .attr("transform", function(d) { return "translate(" + source.y0 + "," + source.x0 + ")"; })
+                    .on('click', click);
+
+                nodeEnter.append('rect')
+                    .attr('width', 220)
+                    .attr('height', 36)
+                    .attr('x', 0)
+                    .attr('y', -18)
+                    .attr('rx', 6)
+                    .attr('ry', 6);
+
+                nodeEnter.append('text')
+                    .attr("dy", "0.35em")
+                    .attr("x", 12)
+                    .attr("text-anchor", "start")
+                    .text(function(d) { 
+                        let name = d.data.name;
+                        return name.length > 28 ? name.substring(0, 26) + '...' : name; 
+                    });
+
+                nodeEnter.append('circle')
+                    .attr('cx', 220)
+                    .attr('cy', 0)
+                    .attr('r', 1e-6);
+
+                const nodeUpdate = nodeEnter.merge(node);
+
+                nodeUpdate.transition()
+                    .duration(duration)
+                    .attr("transform", function(d) { return "translate(" + d.y + "," + d.x + ")"; });
+
+                nodeUpdate.select('rect')
+                    .style("fill", function(d) { return pastelColors[d.depth % pastelColors.length]; })
+                    .style("stroke", function(d) { return d._children ? "#94a3b8" : "#cbd5e1"; })
+                    .style("stroke-width", function(d) { return d._children ? "2px" : "1px"; });
+
+                nodeUpdate.select('circle')
+                    .attr('r', function(d) { return (d.children || d._children) ? 7 : 0; })
+                    .style("fill", function(d) { return d._children ? "#3b82f6" : "#ffffff"; })
+                    .style("display", function(d) { return (d.children || d._children) ? "block" : "none"; });
+
+                const nodeExit = node.exit().transition()
+                    .duration(duration)
+                    .attr("transform", function(d) { return "translate(" + source.y + "," + source.x + ")"; })
+                    .remove();
+
+                nodeExit.select('rect').attr('width', 1e-6).attr('height', 1e-6);
+                nodeExit.select('circle').attr('r', 1e-6);
+                nodeExit.select('text').style('fill-opacity', 1e-6);
+
+                const link = linkGroup.selectAll('path.link')
+                    .data(links, function(d) { return d.id; });
+
+                const linkEnter = link.enter().insert('path', "g")
+                    .attr("class", "link")
+                    .attr('d', function(d){
+                        const o = {x: source.x0, y: source.y0};
+                        return diagonal(o, o);
+                    });
+
+                const linkUpdate = linkEnter.merge(link);
+
+                linkUpdate.transition()
+                    .duration(duration)
+                    .attr('d', function(d){ return diagonal(d.parent, d) });
+
+                const linkExit = link.exit().transition()
+                    .duration(duration)
+                    .attr('d', function(d) {
+                        const o = {x: source.x, y: source.y};
+                        return diagonal(o, o);
+                    })
+                    .remove();
+
+                nodes.forEach(function(d){ d.x0 = d.x; d.y0 = d.y; });
+
+                function diagonal(s, d) {
+                    const sourceX = s.y + 220; 
+                    const targetX = d.y;
+                    return `M ${sourceX} ${s.x}
+                            C ${(sourceX + targetX) / 2} ${s.x},
+                              ${(sourceX + targetX) / 2} ${d.x},
+                              ${targetX} ${d.x}`;
+                }
+            }
+
+            function click(event, d) {
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                update(d);
+            }
+        }
+    </script>
+</body>
+</html>
